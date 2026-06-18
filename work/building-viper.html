@@ -1,0 +1,208 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Building Viper to Automate Email Scheduling &mdash; Michael Clougher</title>
+<link rel="stylesheet" href="../style.css">
+</head>
+<body>
+<main>
+  <a class="back-link" href="../index.html">&larr; Back</a>
+
+  <article class="case-study">
+    <h1>Building Viper to Automate Email Scheduling</h1>
+    <div class="meta">Case study &middot; Platform / automation</div>
+
+    <p>
+      I was hired into my current company as a digital marketing analyst.
+      The work was a mix of Tableau dashboards and historical analysis
+      &mdash; looking at what had worked, what hadn't, and using that to
+      inform decisions about upcoming sends. The decisions themselves
+      landed in a shared Google Sheet that the team used as the scheduling
+      source of truth. Each of us was assigned somewhere between 10 and 20
+      accounts, and our job for those was to fill in the upcoming
+      schedule: which audience segment to send to (something like
+      <em>last 30-day openers</em>), what time of day, which offer to
+      run, and which specific email creative under that offer.
+    </p>
+    <p>
+      The reason this work landed on human analysts in the first place is
+      that the decision is more complicated than it sounds. A good
+      schedule has to respect the gap between two sends of the same offer
+      to an account, the gap between two sends of the same creative
+      <em>type</em>, day-of-week restrictions, seasonality, the ongoing
+      experimentation we wanted to run with new offers, and the occasional
+      re-introduction of an older offer that had performed well at some
+      point and might again. There were dozens of interacting constraints
+      and recent-performance signals; the people doing the job were
+      genuinely making judgment calls every time. The work was slow
+      because the work was hard.
+    </p>
+    <p>
+      But it also did not scale. We were doing this for every assigned
+      account, every week, for a network that at peak reached around 35
+      million sends a day. Manual data entry leaks errors regardless of
+      how careful you are, and we were slowly losing time that could have
+      been spent working on other projects within the company.
+    </p>
+
+    <h3>How it got built</h3>
+    <p>
+      I floated the idea of automating the process. The response was
+      reasonable skepticism. Marketing sends are sensitive &mdash; these
+      are emails going to real people, at scale, and getting a decision
+      wrong can mean off-brand creative, fatigued audiences, or worse.
+      Nobody wanted that experiment to happen on live production sends,
+      and they had a point.
+    </p>
+    <p>
+      So I built it in my free time, alongside my analyst work, on
+      accounts I owned. I called the project Viper &mdash; it was a set
+      of Python scripts working alongside our existing snake-themed
+      scheduling pipeline.
+    </p>
+
+    <h3>From first version to current architecture</h3>
+    <p>
+      The first useful version of Viper covered one or two accounts and
+      tried to reproduce the kind of decisions I would have made for them
+      by hand. I let it pick segment, time, offer, and creative for the
+      upcoming week, then compared what it picked against what I would
+      have picked. When the answers matched (with explainable
+      disagreements), I let it actually run those decisions on those
+      accounts. When they didn't, I dug into why and either fixed the
+      logic or accepted that the difference was actually an improvement
+      from what I might have selected.
+    </p>
+    <p>
+      From there it iterated. Two accounts became ten. Ten became all of
+      my assigned accounts. Eventually it was producing schedules that,
+      when compared against what other analysts were producing for similar
+      accounts, were as good or better &mdash; which was the moment it
+      stopped being a personal productivity tool and started being a
+      candidate for the team's actual workflow.
+    </p>
+    <p>
+      Today, Viper writes the full schedule for the entire portfolio
+      (around 285 accounts) into the same shared sheet the team has used
+      from the beginning. I deliberately kept that sheet in the middle of
+      the pipeline even after Viper was doing the heavy lifting on
+      decisions. It serves three purposes: it's an authoritative log of
+      what's planned, it gives people outside the Viper workflow a place
+      to make ad-hoc manual edits when they need to, and it gives me a
+      fast experimentation surface for whatever I'm building downstream.
+      The sheet is essentially the system's UI &mdash; Viper writes into
+      it, humans can edit it, downstream systems read from it.
+    </p>
+    <p>
+      The architecture is also deliberately pluggable. Different accounts
+      can be configured to use different content-selection functions,
+      offer-ranking functions, and scheduling-rule sets. I built it this
+      way partly because I imagined other engineers or analysts might
+      eventually write their own logic to plug in alongside mine, and
+      partly because I wanted to be able to try new selection logic on
+      individual accounts without disturbing the central engine. The
+      first reason has stayed hypothetical so far &mdash; I am still the
+      one writing the logic &mdash; but the second is exactly how I A/B
+      test any new functions that I want to try today.
+    </p>
+    <p>
+      The implementation itself evolved in steps that each made sense at
+      the time. The very first version was a Jupyter notebook I ran by
+      hand on my laptop. The notebook became a regular Python project,
+      then got tests, a CI pipeline, a Docker image, a managed-cloud
+      deployment triggered on a schedule, and a GitHub Action that
+      redeploys the image automatically whenever I push to main. The data
+      layer connects to multiple SQL databases. Quality holds together
+      through automated Slack alerts I wired up early &mdash; bringing
+      an engineering-style monitoring pattern into the analyst workflow
+      for the first time &mdash; a separate automated scanner that checks
+      the schedule sheet for errors and offers that have run out of
+      budget and need to be swapped out, and a steadily growing pytest
+      suite. None of those evolutions happened because they sounded
+      interesting in isolation. Each one happened because the version
+      before it had become the thing slowing me down or, worse, the thing
+      that was occasionally failing in ways that touched real sends. The
+      shape the system has today is the shape that operational pressure
+      produced.
+    </p>
+
+    <h3>A principle I think generalizes</h3>
+    <p>
+      The single most important thing about how Viper got built is that
+      I was already the user. I had spent months filling in those rows by
+      hand before I started automating any of it. I knew what decisions
+      felt automatic, what decisions were genuinely judgment calls, what
+      the recurring mistakes were, and which accounts had quirks that
+      needed special handling. None of that lived in a requirements
+      document. It lived in my head because I was the one doing the work.
+    </p>
+    <p>
+      I think this generalizes. Software built by people who use the
+      software they build tends to be more proactive &mdash; anticipating
+      cases the developer has personally encountered &mdash; than
+      software built by people who don't. The second category tends to be
+      reactive by structure: the user finds the problem, files a ticket,
+      the developer fixes that one case, repeat. The first category
+      catches whole classes of problems before they happen because the
+      developer has felt them.
+    </p>
+    <p>
+      I would not call this an original observation, but it does seem to
+      be becoming rarer as engineering roles get more specialized and the
+      people writing the code drift further from the people using it.
+      Better tooling and better PM-to-engineer translation help, but they
+      don't fully replace having actually done the work yourself. The
+      Viper experience is the strongest case I can make for closing that
+      distance when you can.
+    </p>
+
+    <h3>What I'd think harder about next time</h3>
+    <p>
+      The biggest thing I'd do differently is invest in a real test suite
+      much earlier. Viper had automated Slack alerts and an automated
+      scheduling scanner in place fairly early &mdash; the observability
+      side of quality was actually never the gap. What <em>was</em> the
+      gap, for too long, was tests.
+    </p>
+    <p>
+      I did not know about pytest when I started, and by the time I came
+      around to taking testing seriously, there was already a substantial
+      amount of code that had grown without tests acting as a contract on
+      its behavior. Two costs came out of that. The obvious one was bugs
+      that real tests would have caught earlier. The less obvious one
+      &mdash; and the one I think about more now &mdash; is that written
+      tests function as documentation of intent, and that documentation
+      is something the AI tooling I lean on today reads and uses. AI
+      assistants are very good at writing additional tests once the right
+      shape exists; they are not good at inferring the right shape from
+      a codebase that has none. If I had written a substantial test suite
+      myself from scratch in the early days, every AI-assisted change I
+      have made since would have had a sturdier foundation to build on,
+      and I would have spent less time correcting context the tools were
+      missing.
+    </p>
+    <p>
+      The lesson I'd carry into any future system is that testing isn't a
+      finishing touch. It's the floor under everything else &mdash; and
+      the artifact that makes collaborating on the codebase later, whether
+      with humans or with AI, actually work.
+    </p>
+  </article>
+
+  <aside class="related">
+    <h2>More case studies</h2>
+    <ul>
+      <li><a href="building-onix.html">Building Onix to automate ESP drop creation</a></li>
+      <li><a href="rendering-engine.html">Replacing a manual templating workflow with an in-house rendering engine</a></li>
+    </ul>
+  </aside>
+
+  <footer class="site">
+    <p><a class="back-link" href="../index.html">&larr; Back to home</a></p>
+  </footer>
+
+</main>
+</body>
+</html>

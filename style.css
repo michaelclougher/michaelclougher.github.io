@@ -1,0 +1,250 @@
+/* Shared site styles. Matches the resume's typography for visual continuity. */
+
+:root {
+  --ink:        #1a1a1a;
+  --muted:      #555;
+  --soft:       #888;
+  --accent:     #2c5e8a;     /* deep editorial blue for links + headers */
+  --accent-warm: #b1502d;    /* terracotta for secondary signal */
+  --code-bg:    #f3ece3;     /* warm cream for inline code */
+  --code-ink:   #6b3417;     /* deeper warm for code text */
+  --rule:       #ddd4c4;     /* warm-tinted hairline */
+  --rule-soft:  #ece6da;     /* lighter warm rule */
+  --bg:         #fdfbf5;     /* a touch warmer than before */
+  --maxw:       42rem;
+}
+
+* { box-sizing: border-box; }
+
+html, body {
+  margin: 0;
+  padding: 0;
+  background: var(--bg);
+  color: var(--ink);
+  font-family: "Charter", "Iowan Old Style", "Georgia", "Cambria", "Times New Roman", serif;
+  font-size: 17px;
+  line-height: 1.55;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+a {
+  color: var(--accent);
+  text-decoration: none;
+  border-bottom: 1px solid transparent;
+  transition: color 0.15s ease, border-color 0.15s ease;
+}
+a:hover {
+  color: var(--accent-warm);
+  border-bottom-color: var(--accent-warm);
+}
+
+main {
+  max-width: var(--maxw);
+  margin: 0 auto;
+  padding: 4rem 1.5rem 6rem;
+}
+
+/* ---------- Header ---------- */
+header.site {
+  margin-bottom: 3rem;
+  padding-bottom: 1.25rem;
+  border-bottom: 1px solid var(--rule);
+  position: relative;
+}
+header.site::after {
+  /* small warm accent stripe just under the rule */
+  content: "";
+  position: absolute;
+  left: 0;
+  bottom: -1px;
+  width: 3.5rem;
+  height: 2px;
+  background: var(--accent-warm);
+}
+h1.name {
+  font-variant: small-caps;
+  letter-spacing: 0.04em;
+  font-size: 2rem;
+  font-weight: 700;
+  margin: 0 0 0.25rem;
+}
+.tagline {
+  color: var(--muted);
+  font-size: 0.98rem;
+  margin: 0 0 0.5rem;
+}
+.contact-row {
+  color: var(--soft);
+  font-size: 0.92rem;
+}
+.contact-row a { color: var(--soft); }
+.contact-row a:hover { color: var(--accent); border-color: var(--accent); }
+.dot { margin: 0 0.4rem; color: var(--accent-warm); opacity: 0.6; }
+
+/* ---------- Sections ---------- */
+section { margin-bottom: 3rem; }
+
+h2 {
+  font-size: 0.85rem;
+  letter-spacing: 0.18em;
+  text-transform: uppercase;
+  color: var(--accent);
+  margin: 0 0 1rem;
+  font-weight: 700;
+}
+
+p { margin: 0 0 1rem; }
+
+/* ---------- Work list ---------- */
+ul.work-list {
+  list-style: none;
+  padding: 0;
+  margin: 0;
+}
+ul.work-list li {
+  padding: 1.1rem 0 1.1rem 1.1rem;
+  border-bottom: 1px solid var(--rule-soft);
+  border-left: 2px solid transparent;
+  transition: border-left-color 0.18s ease, background 0.18s ease;
+}
+ul.work-list li:hover {
+  border-left-color: var(--accent-warm);
+  background: linear-gradient(to right, rgba(177, 80, 45, 0.04), transparent 60%);
+}
+ul.work-list li:last-child { border-bottom: none; }
+.work-title {
+  display: block;
+  font-weight: 700;
+  font-size: 1.05rem;
+  color: var(--ink);
+  border-bottom: none;
+  margin-bottom: 0.3rem;
+}
+.work-title:hover { color: var(--accent); border-bottom: none; }
+.work-blurb {
+  color: var(--muted);
+  font-size: 0.95rem;
+  margin: 0;
+}
+
+/* ---------- Case-study pages ---------- */
+article.case-study h1 {
+  font-size: 1.65rem;
+  margin: 0 0 0.5rem;
+  font-weight: 700;
+  line-height: 1.25;
+}
+article.case-study .meta {
+  color: var(--accent-warm);
+  font-size: 0.78rem;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  margin-bottom: 2.5rem;
+  font-weight: 600;
+}
+article.case-study h3 {
+  font-size: 1.08rem;
+  margin: 2.2rem 0 0.6rem;
+  font-weight: 700;
+  color: var(--ink);
+  position: relative;
+  padding-left: 0.9rem;
+}
+article.case-study h3::before {
+  /* small warm marker before each H3 */
+  content: "";
+  position: absolute;
+  left: 0;
+  top: 0.55em;
+  width: 4px;
+  height: 0.85em;
+  background: var(--accent-warm);
+  border-radius: 1px;
+}
+article.case-study em {
+  font-style: italic;
+}
+article.case-study code {
+  font-family: "SF Mono", "Menlo", "Consolas", monospace;
+  font-size: 0.88em;
+  background: var(--code-bg);
+  color: var(--code-ink);
+  padding: 0.08em 0.35em;
+  border-radius: 3px;
+}
+article.case-study blockquote {
+  margin: 1rem 0;
+  padding: 0.5rem 0 0.5rem 1.25rem;
+  border-left: 3px solid var(--accent-warm);
+  color: var(--muted);
+  font-style: italic;
+}
+.back-link {
+  display: inline-block;
+  margin-bottom: 2rem;
+  font-size: 0.9rem;
+  color: var(--soft);
+  border-bottom: none;
+  letter-spacing: 0.02em;
+}
+.back-link:hover { color: var(--accent-warm); border-bottom: none; }
+
+/* ---------- Related case studies (case-study pages) ---------- */
+aside.related {
+  margin-top: 3.5rem;
+  padding-top: 1.5rem;
+  border-top: 1px solid var(--rule-soft);
+}
+aside.related h2 {
+  font-size: 0.85rem;
+  letter-spacing: 0.18em;
+  text-transform: uppercase;
+  color: var(--accent);
+  margin: 0 0 0.8rem;
+  font-weight: 700;
+}
+aside.related ul {
+  list-style: none;
+  padding: 0;
+  margin: 0;
+}
+aside.related li {
+  margin-bottom: 0.45rem;
+  padding-left: 0.9rem;
+  position: relative;
+}
+aside.related li::before {
+  content: "";
+  position: absolute;
+  left: 0;
+  top: 0.6em;
+  width: 4px;
+  height: 4px;
+  background: var(--accent-warm);
+  border-radius: 50%;
+}
+aside.related a {
+  font-size: 0.98rem;
+  color: var(--ink);
+}
+aside.related a:hover {
+  color: var(--accent-warm);
+}
+
+/* ---------- Footer ---------- */
+footer.site {
+  margin-top: 4rem;
+  padding-top: 1.5rem;
+  border-top: 1px solid var(--rule);
+  font-size: 0.85rem;
+  color: var(--soft);
+}
+
+/* ---------- Mobile ---------- */
+@media (max-width: 540px) {
+  main { padding: 2.5rem 1.2rem 4rem; }
+  h1.name { font-size: 1.7rem; }
+  .contact-row { font-size: 0.85rem; }
+  .dot { margin: 0 0.25rem; }
+}

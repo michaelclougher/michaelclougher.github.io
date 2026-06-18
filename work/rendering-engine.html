@@ -1,0 +1,220 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Replacing a Manual Templating Workflow with an In-House Rendering Engine &mdash; Michael Clougher</title>
+<link rel="stylesheet" href="../style.css">
+</head>
+<body>
+<main>
+  <a class="back-link" href="../index.html">&larr; Back</a>
+
+  <article class="case-study">
+    <h1>Replacing a Manual Templating Workflow with an In-House Rendering Engine</h1>
+    <div class="meta">Case study &middot; Rendering / content quality</div>
+
+    <p>
+      After Onix took over drop creation, the last piece of the pipeline
+      that still needed hands was the templates themselves. The HTML for
+      each send was hand-built by the operations team in a legacy editor
+      that lived inside the same internal platform Onix had largely
+      moved off of. The ops team assembled the template, manually
+      attached CTA links to the right offers, and were supposed to
+      verify everything before sending &mdash; typos, grammar, every
+      link still working.
+    </p>
+    <p>
+      In practice, that verification often didn't happen, and even when
+      it did, the legacy system had bugs the ops team couldn't work
+      around. One example sticks with me: emails would routinely go out
+      with floating commas like <em>"Hi ,"</em> instead of
+      <em>"Hi John,"</em>. The merge-tag handling didn't deal gracefully
+      with missing first names. It had been an outstanding request for
+      years before I owned the rendering layer. Once I did, it took a
+      day. That one fix is small, but it shows the broader pattern
+      &mdash; the legacy templating workflow had accumulated quality
+      issues the people running it had no way to address.
+    </p>
+    <p>
+      When the legacy platform was deprecated and the operations team
+      scaled down, the templating work had to come in-house. That is
+      when I built the rendering engine into Onix.
+    </p>
+
+    <h3>What I built</h3>
+    <p>
+      The renderer reads body content from a separate Google Sheet that
+      serves as our content warehouse, applies a brand-specific Jinja
+      shell, attaches CTA links, adds unsubscribe links, and handles
+      legal-disclaimer logic. Onix calls it at drop creation time, so
+      the final HTML is produced per send, on the fly.
+    </p>
+    <p>
+      The brand shell is deliberately separate from the body content and
+      configurable per brand, which means I can update the look of every
+      send for a given brand by changing one Jinja template rather than
+      editing every row of content. The shell handles dark-mode
+      treatments, header and footer styling, contextual unsubscribe
+      affordances, and the small mechanical details (copyright-year
+      refresh, normalized trailing punctuation, small-font legal text
+      inferred from the rich-text metadata of the sheet) that would
+      otherwise be long-tail polish problems an ops team would have to
+      remember to do by hand.
+    </p>
+    <p>
+      The migration off the legacy templating was less involved than it
+      would have been if there had been any visual variety to preserve.
+      The legacy system produced essentially one standard look across
+      every brand and every send &mdash; frankly, it is a wonder anyone
+      ever clicked anything. I rolled brands onto the new engine in
+      waves, watched closely for anything unexpected, and fixed what
+      needed fixing.
+    </p>
+
+    <h3>CTA detection</h3>
+    <p>
+      One of the harder problems in the renderer was figuring out which
+      text in the body content should become the CTA link. In the
+      legacy workflow, a human read the content and manually decided
+      what to hyperlink. Doing it that way at the scale we render now
+      was not an option.
+    </p>
+    <p>
+      The obvious approach would have been to let an AI model scan each
+      body and pick the CTA. I deliberately did not want to do that.
+      Running a model over every piece of content at render time is
+      expensive, opaque, and slow to debug when it picks the wrong
+      thing. Instead, I used AI to <em>build</em> the detection, not to
+      <em>run</em> it: I started with a short list of heuristics
+      &mdash; specific verb patterns, common CTA phrasing, position
+      within the body, surrounding markup &mdash; and iterated them
+      with AI assistance, sampling failures and adding rules until the
+      detection was reliable on every send.
+    </p>
+    <p>
+      That choice &mdash; heuristics at runtime, AI at design time
+      &mdash; has held up well. The detection is fast, deterministic,
+      and when it picks wrong I can read the rules and see why. That
+      feels like the right way to use AI tooling for anything that runs
+      in production &mdash; let it help you find a rule set, then run
+      the rule set yourself.
+    </p>
+
+    <h3>The validation gate</h3>
+    <p>
+      The renderer refuses to render any row of content that is flagged
+      for quality issues. Quality flagging happens in the content
+      warehouse itself &mdash; a Google Apps Script I wrote runs nightly
+      across every row and produces a "Verify Flags" column. The checks
+      cover length, encoding (Unicode replacement characters from
+      copy-paste corruption), merge-tag validity, footnote consistency,
+      missing privacy-policy links, literal years that should be
+      dynamic, duplicate lines within a body, spelling against a
+      maintained whitelist, and grammar via a self-hosted LanguageTool
+      service.
+    </p>
+    <p>
+      I built the validator inside the sheet, where the content team
+      actually writes the copy, on purpose. Putting validation in front
+      of the human who can fix the problem in real time is much cheaper
+      than catching it later at render time, when context has gone cold
+      and there is operational pressure to send. The renderer's refusal
+      to render flagged content is the hard guarantee underneath. The
+      validator inside the sheet is the way most flags get resolved
+      before the renderer ever sees them.
+    </p>
+    <p>
+      The merge-tag work is part of this layer. Beyond the "Hi ," fix,
+      the validator also catches unclosed merge-tag blocks, bare field
+      references that would render with a floating comma if the field
+      were empty, and unrecognized merge syntax. The class of bugs that
+      produced "Hi ," in the legacy system is structurally impossible
+      now.
+    </p>
+
+    <h3>Challenges</h3>
+    <p>
+      The largest technical challenge was working with the content
+      warehouse sheet at the scale we operate. The warehouse holds
+      roughly 38,000 rows of body content and grows. Pulling it down,
+      scanning every row, and writing results back every night is a job
+      that has to be designed around the Google Sheets API's quotas and
+      pagination behavior. Naive implementations time out or fail
+      partway through. The current setup chunks reads and writes,
+      caches what it can, and treats the sheet itself as the source of
+      truth &mdash; which keeps the operational picture simple but
+      requires being deliberate about how much work the script does per
+      run.
+    </p>
+    <p>
+      Legal disclaimers were the more sensitive challenge, even though
+      they were less hard technically. Different offers require
+      different legal footers, and the specification of which footer
+      applies was inconsistent in our data &mdash; sometimes in the
+      body content, sometimes attached at the offer level in metadata,
+      sometimes both, occasionally with different versions. Missing or
+      wrong legal text can have real regulatory consequences. The
+      renderer treats the offer-level specification as the source of
+      truth, falls back to body-level when needed, and flags any
+      inconsistency for me to review directly. It is not the most
+      elegant solution, but it matches the actual state of the upstream
+      data and keeps the legal exposure under control.
+    </p>
+
+    <h3>What the new system unlocks</h3>
+    <p>
+      The thing I find most exciting about the new setup is that the
+      brand-shell layer makes new visual styles cheap. With the legacy
+      templating workflow, every send looked the same, regardless of
+      advertiser. With the new engine, I can take an advertiser's brand
+      and have a beautiful, advertiser-specific template ready within
+      about ten minutes. That has changed what kinds of campaigns we
+      can run.
+    </p>
+
+    <h3>What I'd think harder about next time</h3>
+    <p>
+      The biggest thing I'd do differently is unify the sheet's content
+      rules and the renderer's logic from the start, rather than letting
+      them grow as two layers that occasionally disagree.
+    </p>
+    <p>
+      In the current setup, the content warehouse sheet has a dedicated
+      CTA column where the explicit CTA text can be written. At first,
+      that column was only a fallback &mdash; used when the renderer's
+      heuristics failed to find a CTA, or when someone needed to
+      override what the heuristics picked. Over time it became clear
+      that having two ways to know what the CTA was meant occasional
+      surprises: the renderer would pick something the column did not
+      agree with, or the heuristics would miss entirely and a drop
+      would error out at render time.
+    </p>
+    <p>
+      If I started over, the column would be the source of truth from
+      day one and the renderer would just read from it. The heuristics
+      still have a place &mdash; they help fill in the column quickly
+      when bulk-onboarding new content &mdash; but inferring at runtime
+      is the kind of cleverness that catches up with you. The general
+      principle is that any system with two ways of arriving at the
+      same answer will eventually find a way to disagree with itself,
+      and the cheaper move is to pick one source of truth as early as
+      possible.
+    </p>
+  </article>
+
+  <aside class="related">
+    <h2>More case studies</h2>
+    <ul>
+      <li><a href="building-viper.html">Building Viper to automate email scheduling</a></li>
+      <li><a href="building-onix.html">Building Onix to automate ESP drop creation</a></li>
+    </ul>
+  </aside>
+
+  <footer class="site">
+    <p><a class="back-link" href="../index.html">&larr; Back to home</a></p>
+  </footer>
+
+</main>
+</body>
+</html>

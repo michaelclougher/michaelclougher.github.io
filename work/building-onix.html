@@ -1,0 +1,229 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Building Onix to Automate ESP Drop Creation &mdash; Michael Clougher</title>
+<link rel="stylesheet" href="../style.css">
+</head>
+<body>
+<main>
+  <a class="back-link" href="../index.html">&larr; Back</a>
+
+  <article class="case-study">
+    <h1>Building Onix to Automate ESP Drop Creation</h1>
+    <div class="meta">Case study &middot; Platform / direct-ESP integration</div>
+
+    <p>
+      By the time I started working on what would become Onix, the
+      upstream half of the campaign pipeline was already automated &mdash;
+      an earlier Python project of mine (Viper) was writing the upcoming
+      schedule into a shared Google Sheet that the team used as its source
+      of truth. The bottleneck had moved downstream. Getting the rows on
+      that shared schedule turned into actual sends was still a manual
+      job, and it lived with the operations team &mdash; well over fifty
+      people who would, every day, take each row and configure the
+      corresponding campaign in our ESPs. They worked through a mix of
+      the ESP user interfaces directly and an internal legacy platform
+      that another team at the company had built to give them a unified
+      view across ESP accounts.
+    </p>
+    <p>
+      It was not a workflow that scaled. The legacy platform was buggy
+      and the fix cycle on those bugs was long. The user interface
+      required several lookups just to find the offer you were trying to
+      schedule against. The ops team did its best, but with that many
+      people setting up that many drops every day, the failure mode was
+      structural &mdash; wrong creative going out, wrong segment targeted,
+      send going out at the wrong time, occasional drops that simply did
+      not go at all. None of those errors were on any one person; they
+      were a consequence of asking humans to do high-volume,
+      high-precision data entry across multiple inconsistent systems.
+    </p>
+    <p>
+      Around the same time, the legacy platform was being deprecated
+      and the operations team's work was being scaled down. The need
+      was clear: a system that could take a schedule from the shared
+      sheet and create the corresponding drops directly in the ESPs,
+      without depending on either the legacy platform or human ops
+      setup.
+    </p>
+
+    <h3>What I built</h3>
+    <p>
+      Onix is a Python service that reads from the shared schedule,
+      decides per drop which ESP that account uses, and creates the
+      campaign in that ESP via its API. Today it covers Iterable and
+      Pinpointe; the architecture is open enough that adding a third
+      ESP would not require rewriting the core.
+    </p>
+    <p>
+      The migration off the old setup happened account by account. For
+      each account, I validated Onix's flow against what the legacy
+      setup had been producing, fixed anything that did not line up, and
+      moved that account fully onto Onix once it was clean. Drop creation
+      is a different kind of risky than drop content rendering &mdash; a
+      wrong segment or a wrong send time is a customer-visible mistake
+      that you cannot quietly fix after the fact &mdash; so the migration
+      could not happen in a single switchover for any individual account.
+    </p>
+
+    <h3>The hardest problem: speaking two ESP languages without losing the meaning of either</h3>
+    <p>
+      The most interesting engineering problem in Onix was the domain
+      model. The two ESPs we integrate with have fundamentally different
+      concepts of what a "drop" is.
+    </p>
+    <p>
+      In Iterable, a campaign and its content template are two separate
+      objects. You build the content template once, you create a
+      campaign that points at it, and the campaign carries the
+      segmentation and send-time information separately from the
+      content. In Pinpointe, a "newsletter" is both the campaign
+      <em>and</em> the content template at the same time &mdash; they
+      are not separable concepts in Pinpointe's API.
+    </p>
+    <p>
+      The shared schedule, meanwhile, has its own language. A row on it
+      describes a drop &mdash; which on the surface is simpler than
+      either ESP's model, but in practice has to be precise enough to
+      map cleanly onto whichever ESP the account uses, and general
+      enough to leave room for a third ESP one day.
+    </p>
+    <p>
+      So the question was: how do you design the abstractions inside
+      Onix so that the <em>generic</em> layer can reason about drops the
+      way the shared schedule does, while the <em>ESP-specific</em>
+      layer talks in each ESP's native terms?
+    </p>
+    <p>
+      What I landed on is a domain layer that defines what a drop is in
+      our own language &mdash; segment, send time, offer, creative,
+      suppression list, brand context &mdash; and a set of ESP adapters
+      that know how to translate that into the specific shape each ESP
+      expects. The Iterable adapter knows that a drop becomes a content
+      template plus a campaign and that the campaign carries the
+      schedule. The Pinpointe adapter knows that a drop becomes a single
+      newsletter object and that the abstraction we use elsewhere does
+      not map cleanly to that &mdash; and the adapter handles the
+      translation rather than leaking the inconsistency upward.
+    </p>
+    <p>
+      The discipline I held to was: any code outside the adapters should
+      be able to read like our internal language. Whether a given
+      account is on Iterable or Pinpointe should only matter at the
+      boundary, never in the core. That has held up well &mdash; the
+      place I most see it pay off is when something needs to change in
+      how we handle drops generally, and the change happens in one place
+      rather than two-with-an-asterisk.
+    </p>
+
+    <h3>Suppression</h3>
+    <p>
+      The other thing Onix does at drop creation time is enforce
+      suppression. There are two layers.
+    </p>
+    <p>
+      The first is per-offer suppression. Most of the offers we run come
+      with MD5-hash lists from the advertiser of users they do not want
+      messaged. Onix downloads those lists, cross-references them
+      against the segment for each drop, and removes any matches before
+      the drop is created. This used to be a manual step, when it was
+      done at all.
+    </p>
+    <p>
+      The second is what I call global suppression &mdash; a list of
+      users we never want to send to under any circumstances, for our
+      own reasons. I built an internal API endpoint that other people
+      at the company can post MD5 hashes to when a user needs to be
+      added to that list. Two things keep this list enforced: every
+      segment Onix builds is filtered against it at drop creation, and
+      a pair of Cloud Run jobs (one for each ESP) runs on a schedule to
+      find and unsubscribe anyone already sitting in an ESP segment who
+      happens to match the global list. The first is preemptive; the
+      second is a continuous safety net. Many users on the global list
+      have never appeared in any of our segments at all &mdash; the
+      system catches them either way.
+    </p>
+
+    <h3>Building Onix with AI tools</h3>
+    <p>
+      Onix was the first significant system I built where AI coding
+      assistants were a meaningful part of how I worked. Viper, by
+      contrast, was mostly hand-written, with AI assistance coming in
+      only years later for additions and refactors. Onix was
+      AI-assisted from earlier in its lifecycle.
+    </p>
+    <p>
+      In practice, my workflow with the tools has two modes. For new
+      architectural questions &mdash; like how to model the Iterable /
+      Pinpointe difference cleanly &mdash; I would describe the concept
+      in plain language, ask for a few possible shapes of the
+      abstraction, and then pick or compose from what came back. The AI
+      was good at proposing options I had not thought of; I was better
+      at knowing which option would survive contact with the actual ESPs
+      over time. For more concrete pieces of code, I would often write
+      the function myself, or to maybe ninety percent completeness, and
+      then hand it to the AI to clean up, add documentation comments,
+      and place into the appropriate section of the codebase. That
+      second mode probably accounts for more of my actual AI use than
+      the first.
+    </p>
+    <p>
+      Either way, the division of labor is the same: generative breadth
+      from the tool, judgment from me.
+    </p>
+    <p>
+      This only works, though, when the codebase gives the AI something
+      solid to ground its suggestions in. Onix was scaffolded with that
+      in mind from the start: clear module boundaries, deliberate naming
+      for the ESP adapters, tests written alongside the code rather than
+      retrofitted. Some of that is just good engineering. A piece of it
+      is specifically about making the codebase legible to the assistant
+      I planned to keep working with.
+    </p>
+
+    <h3>What I'd think harder about next time</h3>
+    <p>
+      The biggest thing I'd do differently is be more firm and more
+      descriptive when telling the AI what to do &mdash; particularly
+      around the abstractions I wanted in place.
+    </p>
+    <p>
+      A few corners of Onix are organized in ways that work fine
+      functionally but read less intuitively than they should to a
+      human. There are workflows, for example, that require an
+      <code>ESP</code> class to be created or a <code>Drop</code> class
+      to be instantiated, and conceptually those are not the most
+      accurate ways to think about what is happening. Everything runs
+      correctly. The code is just slightly harder to read than it needs
+      to be in those places, because at the time I let the AI propose
+      the structure and I did not push back hard enough on what felt
+      off.
+    </p>
+    <p>
+      The thing I learned is that with AI tools, the failure mode
+      usually isn't "the AI produced bad code." It's "the AI produced
+      code that works but doesn't match the mental model I actually
+      wanted." Catching that means going into the prompt with a clear
+      picture of what the abstractions should be, and pushing back when
+      what comes back doesn't fit. I came out of Onix more disciplined
+      about that than I went in.
+    </p>
+  </article>
+
+  <aside class="related">
+    <h2>More case studies</h2>
+    <ul>
+      <li><a href="building-viper.html">Building Viper to automate email scheduling</a></li>
+      <li><a href="rendering-engine.html">Replacing a manual templating workflow with an in-house rendering engine</a></li>
+    </ul>
+  </aside>
+
+  <footer class="site">
+    <p><a class="back-link" href="../index.html">&larr; Back to home</a></p>
+  </footer>
+
+</main>
+</body>
+</html>
